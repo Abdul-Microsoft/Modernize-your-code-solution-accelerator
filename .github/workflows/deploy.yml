@@ -45,7 +45,7 @@ jobs:
           rg_exists=$(az group exists --name ${{ env.RESOURCE_GROUP_NAME }})
           if [ "$rg_exists" = "false" ]; then
             echo "Resource group does not exist. Creating..."
-            az group create --name ${{ env.RESOURCE_GROUP_NAME }} --location northcentralus || { echo "Error creating resource group"; exit 1; }
+            az group create --name ${{ env.RESOURCE_GROUP_NAME }} --location swedencentral || { echo "Error creating resource group"; exit 1; }
           else
             echo "Resource group already exists."
           fi
@@ -70,7 +70,7 @@ jobs:
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --template-file infra/main.bicep \
-            --parameters AzureAiServiceLocation=northcentralus Prefix=${{ env.SOLUTION_PREFIX }}
+            --parameters AzureAiServiceLocation=swedencentral Prefix=${{ env.SOLUTION_PREFIX }}
 
 
       - name: Send Notification on Failure
