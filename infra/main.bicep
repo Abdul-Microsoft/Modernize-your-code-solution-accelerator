@@ -144,6 +144,7 @@ module aiServices 'modules/aiServices.bicep' = {
   #disable-next-line no-unnecessary-dependson
   dependsOn: [logAnalyticsWorkspace, network] // required due to optional flags that could change dependency
   params: {
+    resourcesName: resourcesName
     name: 'ais-${resourcesName}'
     location: azureAiServiceLocation
     sku: 'S0'
@@ -171,7 +172,13 @@ module aiServices 'modules/aiServices.bicep' = {
         principalType: 'ServicePrincipal'
         roleDefinitionIdOrName: 'Cognitive Services OpenAI Contributor'
       }
+      {
+        principalId: appIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'AI User'
+      }
     ]
+    appIdentityPrincipalId: appIdentity.outputs.principalId
     tags: allTags
     enableTelemetry: enableTelemetry
   }
@@ -237,35 +244,37 @@ module keyVault 'modules/keyVault.bicep' = {
   }
 }
 
-module azureAifoundry 'modules/aiFoundry.bicep' = {
-  name: take('aifoundry-${resourcesName}-deployment', 64)
-  #disable-next-line no-unnecessary-dependson
-  dependsOn: [logAnalyticsWorkspace, network] // required due to optional flags that could change dependency
-  params: {
-    location: azureAiServiceLocation
-    hubName: 'hub-${resourcesName}'
-    hubDescription: 'AI Hub for Modernize Your Code'
-    projectName: 'proj-${resourcesName}'
-    storageAccountResourceId: storageAccount.outputs.resourceId
-    keyVaultResourceId: keyVault.outputs.resourceId
-    userAssignedIdentityResourceId: aiFoundryIdentity.outputs.resourceId
-    logAnalyticsWorkspaceResourceId: enableMonitoring ? logAnalyticsWorkspace.outputs.resourceId : ''
-    aiServicesName: aiServices.outputs.name
-    privateNetworking: enablePrivateNetworking ? {
-      virtualNetworkResourceId: network.outputs.vnetResourceId
-      subnetResourceId: network.outputs.subnetPrivateEndpointsResourceId
-    } : null
-    roleAssignments: [
-      {
-        principalId: appIdentity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: '64702f94-c441-49e6-a78b-ef80e0188fee' // Azure AI Developer
-      }
-    ]
-    tags: allTags
-    enableTelemetry: enableTelemetry
-  }
-}
+// module azureAifoundry 'modules/aiFoundry.bicep' = {
+//   name: take('aifoundry-${resourcesName}-deployment', 64)
+//   #disable-next-line no-unnecessary-dependson
+//   dependsOn: [logAnalyticsWorkspace, network] // required due to optional flags that could change dependency
+//   params: {
+//     location: azureAiServiceLocation
+//     hubName: 'hub-${resourcesName}'
+//     hubDescription: 'AI Hub for Modernize Your Code'
+//     projectName: 'proj-${resourcesName}'
+//     storageAccountResourceId: storageAccount.outputs.resourceId
+//     keyVaultResourceId: keyVault.outputs.resourceId
+//     userAssignedIdentityResourceId: aiFoundryIdentity.outputs.resourceId
+//     logAnalyticsWorkspaceResourceId: enableMonitoring ? logAnalyticsWorkspace.outputs.resourceId : ''
+//     aiServicesName: aiServices.outputs.name
+//     privateNetworking: enablePrivateNetworking ? {
+//       virtualNetworkResourceId: network.outputs.vnetResourceId
+//       subnetResourceId: network.outputs.subnetPrivateEndpointsResourceId
+//     } : null
+//     roleAssignments: [
+//       {
+//         principalId: appIdentity.outputs.principalId
+//         principalType: 'ServicePrincipal'
+//         roleDefinitionIdOrName: '64702f94-c441-49e6-a78b-ef80e0188fee' // Azure AI Developer
+//       }
+//     ]
+//     tags: allTags
+//     enableTelemetry: enableTelemetry
+//   }
+// }
+
+
 
 module cosmosDb 'modules/cosmosDb.bicep' = {
   name: take('cosmos-${resourcesName}-deployment', 64)
@@ -455,20 +464,12 @@ module containerAppBackend 'br/public:avm/res/app/container-app:0.17.0' = {
             value: modelDeployment.name
           }
           {
-            name: 'AZURE_AI_AGENT_PROJECT_NAME'
-            value: azureAifoundry.outputs.projectName
-          }
-          {
             name: 'AZURE_AI_AGENT_RESOURCE_GROUP_NAME'
             value: resourceGroup().name
           }
           {
             name: 'AZURE_AI_AGENT_SUBSCRIPTION_ID'
             value: subscription().subscriptionId
-          }
-          {
-            name: 'AZURE_AI_AGENT_PROJECT_CONNECTION_STRING'
-            value: azureAifoundry.outputs.projectConnectionString
           }
           {
             name: 'AZURE_CLIENT_ID'
@@ -482,6 +483,10 @@ module containerAppBackend 'br/public:avm/res/app/container-app:0.17.0' = {
           {
             name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
             value: applicationInsights.outputs.connectionString
+          }
+          {
+            name: 'AZURE_AI_AGENT_ENDPOINT'
+            value: aiServices.outputs.aiFoundryProjectEndpoint
           }
         ] : [])
         resources: {
@@ -527,3 +532,5 @@ module containerAppBackend 'br/public:avm/res/app/container-app:0.17.0' = {
     enableTelemetry: enableTelemetry
   }
 }
+
+//role assignments

@@ -68,6 +68,10 @@ param tags object = {}
 @description('Optional. Enable/Disable usage telemetry for module.')
 param enableTelemetry bool = true
 
+param resourcesName string
+
+param appIdentityPrincipalId string
+
 module cognitiveServicesPrivateDnsZone 'br/public:avm/res/network/private-dns-zone:0.7.1' = if (privateNetworking != null && empty(privateNetworking.?cogServicesPrivateDnsZoneResourceId)) {
   name: take('${name}-cognitiveservices-pdns-deployment', 64) 
   params: {
@@ -141,10 +145,57 @@ module cognitiveService 'br/public:avm/res/cognitive-services/account:0.10.2' = 
   }
 }
 
+resource aiServices 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' existing = {
+  name: name
+}
+
+var aiFoundryAiProjectName = 'aifp-${resourcesName}'
+var aiProjectDescription = 'AI Foundry Project'
+
+resource aiFoundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview' = {
+  parent: aiServices
+  name: aiFoundryAiProjectName
+  location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    description: aiProjectDescription
+    displayName: aiFoundryAiProjectName
+  }
+}
+
+resource aiUser 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  name: '53ca6127-db72-4b80-b1b0-d745d6d5456d'
+}
+
+resource aiUserAccessProj 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiFoundryProject.id, aiUser.id)
+  scope: aiFoundryProject
+  properties: {
+    roleDefinitionId: aiUser.id
+    principalId: appIdentityPrincipalId
+  }
+}
+
+resource aiDeveloper 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  name: '64702f94-c441-49e6-a78b-ef80e0188fee'
+}
+
+resource aiDeveloperAccessProj 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiFoundryProject.id, aiDeveloper.id)
+  scope: aiFoundryProject
+  properties: {
+    roleDefinitionId: aiDeveloper.id
+    principalId: appIdentityPrincipalId
+  }
+}
+
 output resourceId string = cognitiveService.outputs.resourceId
 output name string = cognitiveService.outputs.name
 output systemAssignedMIPrincipalId string? = cognitiveService.outputs.?systemAssignedMIPrincipalId
 output endpoint string = cognitiveService.outputs.endpoint
+output aiFoundryProjectEndpoint string= aiFoundryProject.properties.endpoints['AI Foundry API']
 
 @export()
 @description('Values to establish private networking for resources that support createing private endpoints.')
