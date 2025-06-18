@@ -103,7 +103,7 @@ module openAiPrivateDnsZone 'br/public:avm/res/network/private-dns-zone:0.7.1' =
 var cogServicesPrivateDnsZoneResourceId = privateNetworking != null ? (empty(privateNetworking.?cogServicesPrivateDnsZoneResourceId) ? cognitiveServicesPrivateDnsZone.outputs.resourceId ?? '' : privateNetworking.?cogServicesPrivateDnsZoneResourceId) : ''
 var openAIPrivateDnsZoneResourceId = privateNetworking != null ? (empty(privateNetworking.?openAIPrivateDnsZoneResourceId) ? openAiPrivateDnsZone.outputs.resourceId ?? '' : privateNetworking.?openAIPrivateDnsZoneResourceId) : ''
 
-module cognitiveService 'br/public:avm/res/cognitive-services/account:0.10.2' = {
+module cognitiveService 'br/public:avm/res/cognitive-services/account:0.11.0' = {
   name: take('${name}-aiservices-deployment', 64)
   #disable-next-line no-unnecessary-dependson
   dependsOn: [cognitiveServicesPrivateDnsZone, openAiPrivateDnsZone] // required due to optional flags that could change dependency
@@ -113,6 +113,7 @@ module cognitiveService 'br/public:avm/res/cognitive-services/account:0.10.2' = 
     tags: tags
     sku: sku
     kind: kind
+    allowProjectManagement: true
     managedIdentities: {
       systemAssigned: true
     }
