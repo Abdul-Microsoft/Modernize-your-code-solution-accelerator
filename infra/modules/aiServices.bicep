@@ -147,6 +147,9 @@ module cognitiveService 'br/public:avm/res/cognitive-services/account:0.10.2' = 
 
 resource aiServices 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' existing = {
   name: name
+  dependsOn: [
+    cognitiveService
+  ]
 }
 
 var aiFoundryAiProjectName = 'aifp-${resourcesName}'
