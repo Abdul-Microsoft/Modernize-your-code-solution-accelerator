@@ -175,7 +175,7 @@ module aiServices 'modules/aiServices.bicep' = {
       {
         principalId: appIdentity.outputs.principalId
         principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: 'AI User'
+        roleDefinitionIdOrName: 'Azure AI User'
       }
     ]
     appIdentityPrincipalId: appIdentity.outputs.principalId
