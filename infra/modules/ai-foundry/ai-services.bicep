@@ -6,6 +6,14 @@ metadata description = 'This module deploys a Cognitive Service.'
 @description('Required. The name of Cognitive Services account.')
 param name string
 
+@description('Optional: Name for the project which needs to be created.')
+param projectName string
+
+@description('Optional: Description  for the project which needs to be created.')
+param projectDescription string
+@description('Optional. Key vault reference and secret settings for the module\'s secrets export.')
+param secretsExportConfiguration secretsExportConfigurationType?
+
 @description('Required. Kind of the Cognitive Services account. Use \'Get-AzCognitiveServicesAccountSku\' to determine a valid combinations of \'kind\' and \'SKU\' for your Azure region.')
 @allowed([
   'AIServices'
@@ -69,16 +77,6 @@ param diagnosticSettings diagnosticSettingFullType[]?
   'Enabled'
   'Disabled'
 ])
-param publicNetworkAccess string?
-
-@description('Conditional. Subdomain name used for token-based authentication. Required if \'networkAcls\' or \'privateEndpoints\' are set.')
-param customSubDomainName string?
-
-@description('Optional. A collection of rules governing the accessibility from specific network locations.')
-param networkAcls object?
-
-@description('Optional. The network injection subnet resource Id for the Cognitive Services account. This allows to use the AI Services account with a virtual network.')
-param networkInjectionSubnetResourceId string?
 
 import { privateEndpointSingleServiceType } from 'br/public:avm/utl/types/avm-common-types:0.5.1'
 @description('Optional. Configuration details for private endpoints. For security reasons, it is recommended to use private endpoints whenever possible.')
@@ -91,31 +89,6 @@ param roleAssignments roleAssignmentType[]?
 @description('Optional. Tags of the resource.')
 param tags object?
 
-@description('Optional. List of allowed FQDN.')
-param allowedFqdnList array?
-
-@description('Optional. The API properties for special APIs.')
-param apiProperties object?
-
-@description('Optional. Allow only Azure AD authentication. Should be enabled for security reasons.')
-param disableLocalAuth bool = true
-
-@description('Optional. The flag to enable dynamic throttling.')
-param dynamicThrottlingEnabled bool = false
-
-@secure()
-@description('Optional. Resource migration token.')
-param migrationToken string?
-
-@description('Optional. Restore a soft-deleted cognitive service at deployment time. Will fail if no such soft-deleted resource exists.')
-param restore bool = false
-
-@description('Optional. Restrict outbound network access.')
-param restrictOutboundNetworkAccess bool = true
-
-@description('Optional. The storage accounts for this resource.')
-param userOwnedStorage array?
-
 import { managedIdentityAllType } from 'br/public:avm/utl/types/avm-common-types:0.5.1'
 @description('Optional. The managed identity definition for this resource.')
 param managedIdentities managedIdentityAllType?
@@ -123,21 +96,10 @@ param managedIdentities managedIdentityAllType?
 @description('Optional. Array of deployments about cognitive service accounts to create.')
 param deployments deploymentType[]?
 
-var enableReferencedModulesTelemetry = false
+@description('Optional. Use this parameter to use an existing AI project resource ID')
+param azureExistingAIProjectResourceId string?
 
-var formattedUserAssignedIdentities = reduce(
-  map((managedIdentities.?userAssignedResourceIds ?? []), (id) => { '${id}': {} }),
-  {},
-  (cur, next) => union(cur, next)
-) // Converts the flat array to an object like { '${id1}': {}, '${id2}': {} }
-var identity = !empty(managedIdentities)
-  ? {
-      type: (managedIdentities.?systemAssigned ?? false)
-        ? (!empty(managedIdentities.?userAssignedResourceIds ?? {}) ? 'SystemAssigned, UserAssigned' : 'SystemAssigned')
-        : (!empty(managedIdentities.?userAssignedResourceIds ?? {}) ? 'UserAssigned' : null)
-      userAssignedIdentities: !empty(formattedUserAssignedIdentities) ? formattedUserAssignedIdentities : null
-    }
-  : null
+var enableReferencedModulesTelemetry = false
 
 var builtInRoleNames = {
   'Cognitive Services Contributor': subscriptionResourceId(
@@ -260,49 +222,8 @@ var formattedRoleAssignments = [
   })
 ]
 
-resource cognitiveService 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
+resource cognitiveService 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' existing = {
   name: name
-  kind: kind
-  identity: identity
-  location: location
-  tags: tags
-  sku: {
-    name: sku
-  }
-  properties: {
-    customSubDomainName: customSubDomainName
-    allowProjectManagement: true
-    networkAcls: !empty(networkAcls ?? {})
-      ? {
-          defaultAction: networkAcls.?defaultAction
-          virtualNetworkRules: networkAcls.?virtualNetworkRules ?? []
-          ipRules: networkAcls.?ipRules ?? []
-        }
-      : null
-    publicNetworkAccess: publicNetworkAccess != null
-      ? publicNetworkAccess
-      : (!empty(networkAcls) ? 'Enabled' : 'Disabled')
-    allowedFqdnList: allowedFqdnList
-    apiProperties: apiProperties
-    disableLocalAuth: disableLocalAuth
-    #disable-next-line BCP036
-    networkInjections: networkInjectionSubnetResourceId != null
-      ? [
-          {
-            scenario: 'agent'
-            subnetArmId: networkInjectionSubnetResourceId
-            useMicrosoftManagedNetwork: false
-          }
-        ]
-      : null
-    // true is not supported today
-    encryption: null // Customer managed key encryption is not used, but the property is required.
-    migrationToken: migrationToken
-    restore: restore
-    restrictOutboundNetworkAccess: restrictOutboundNetworkAccess
-    userOwnedStorage: userOwnedStorage
-    dynamicThrottlingEnabled: dynamicThrottlingEnabled
-  }
 }
 
 @batchSize(1)
@@ -425,26 +346,60 @@ resource cognitiveService_roleAssignments 'Microsoft.Authorization/roleAssignmen
   }
 ]
 
-@description('The name of the cognitive services account.')
-output name string = cognitiveService.name
+module secretsExport 'keyVaultExport.bicep' = if (secretsExportConfiguration != null) {
+  name: '${uniqueString(deployment().name, location)}-secrets-kv'
+  scope: resourceGroup(
+    split(secretsExportConfiguration.?keyVaultResourceId!, '/')[2],
+    split(secretsExportConfiguration.?keyVaultResourceId!, '/')[4]
+  )
+  params: {
+    keyVaultName: last(split(secretsExportConfiguration.?keyVaultResourceId!, '/'))
+    secretsToSet: union(
+      [],
+      contains(secretsExportConfiguration!, 'accessKey1Name')
+        ? [
+            {
+              name: secretsExportConfiguration!.?accessKey1Name
+              value: cognitiveService.listKeys().key1
+            }
+          ]
+        : [],
+      contains(secretsExportConfiguration!, 'accessKey2Name')
+        ? [
+            {
+              name: secretsExportConfiguration!.?accessKey2Name
+              value: cognitiveService.listKeys().key2
+            }
+          ]
+        : []
+    )
+  }
+}
 
-@description('The resource ID of the cognitive services account.')
-output resourceId string = cognitiveService.id
+// ================ //
+// AI PROJECT      //
+// ================ //
 
-@description('The resource group the cognitive services account was deployed into.')
-output resourceGroupName string = resourceGroup().name
+module aiProject 'project.bicep' = if(!empty(projectName) || !empty(azureExistingAIProjectResourceId)) {
+  name: take('${name}-ai-project-${projectName}-deployment', 64)
+  params: {
+    name: projectName
+    desc: projectDescription
+    aiServicesName: cognitiveService.name
+    location: location
+    tags: tags
+    azureExistingAIProjectResourceId: azureExistingAIProjectResourceId
+  }
+}
 
-@description('The service endpoint of the cognitive services account.')
-output endpoint string = cognitiveService.properties.endpoint
+import { secretsOutputType } from 'br/public:avm/utl/types/avm-common-types:0.5.1'
+@description('A hashtable of references to the secrets exported to the provided Key Vault. The key of each reference is each secret\'s name.')
+output exportedSecrets secretsOutputType = (secretsExportConfiguration != null)
+  ? toObject(secretsExport.outputs.secretsSet, secret => last(split(secret.secretResourceId, '/')), secret => secret)
+  : {}
 
-@description('All endpoints available for the cognitive services account, types depends on the cognitive service kind.')
-output endpoints endpointType = cognitiveService.properties.endpoints
-
-@description('The principal ID of the system assigned identity.')
-output systemAssignedMIPrincipalId string? = cognitiveService.?identity.?principalId
-
-@description('The location the resource was deployed into.')
-output location string = cognitiveService.location
+import { aiProjectOutputType } from './project.bicep'
+output aiProjectInfo aiProjectOutputType = aiProject.outputs.aiProjectInfo
 
 @description('The private endpoints of the congitive services account.')
 output privateEndpoints privateEndpointOutputType[] = [
